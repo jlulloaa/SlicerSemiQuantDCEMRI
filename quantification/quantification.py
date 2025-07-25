@@ -1779,7 +1779,7 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
             else:
                 # Everything else must be 0 already
                 pass
-            WASHOUTmap[truth_table_indices] = idx # The logix is different to SER maps, so in this case IDX is correct (instead of IDX+1)
+            WASHOUTmap[truth_table_indices] = idx # The logic is different to SER maps, so in this case IDX is correct (instead of IDX+1)
         
         WASHOUTmap *= base_mask
         DeltaMapTemplate[roiIJK['IJKmin'][2]:roiIJK['IJKmax'][2], roiIJK['IJKmin'][1]:roiIJK['IJKmax'][1], roiIJK['IJKmin'][0]:roiIJK['IJKmax'][0]] = WASHOUTmap
@@ -1825,7 +1825,8 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
         
         if useSERmap:
             # FTV map label from SERmap:
-            mapVolumes = {'FTV': np.where(SER > serMapDictionary['SERthreshold'], 1.0, 0.0),
+            mapVolumes = {'FTV0': np.where(SER > 0.0, 1.0, 0.0),
+                        'FTVthresh': np.where(SER > serMapDictionary['SERthreshold'], 1.0, 0.0),
                         # ETV is defined as the total number of pixels that enhance around 2 min post contrast injection 
                         # (Henderson et al., 2018), (Panthi et al., 2023)
                         'ETV':  np.where(ETVthreshold > 0.0, 1.0, 0.0) , # np.where(PE > 0, 1.0, 0.0),
@@ -1834,7 +1835,8 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
             # JU (10/07/2025): FTV map label from CAD-like map
             #   Unlike SER, in this case, the FTV must be calculated differently
             #   It is only needed to sum over the actual ranges (not 0), so have to use WASHOUTmap
-            mapVolumes = {'FTV': np.where( ( WASHOUTmap == cadMapDictionary['legend'].index('Plateau') ) | 
+            mapVolumes = {'FTV0': np.where( WASHOUTmap > 0.0, 1.0, 0.0),
+                        'FTVthresh': np.where( ( WASHOUTmap == cadMapDictionary['legend'].index('Plateau') ) | 
                                            ( WASHOUTmap == cadMapDictionary['legend'].index('Washout') ),
                                            1.0, 
                                            0.0),
@@ -1953,7 +1955,9 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
 
         # Iterate over the segmentation mask and get statistics for each SER label:
         maskSegmentations = maskVolumeSegmentationNode.GetSegmentation()
-        FTVstats = [mapStats['FTV']['volume_cm3']['value'], mapStats['FTV']['voxel_count']['value']]
+        
+        FTVstats = [mapStats['FTV0']['volume_cm3']['value'], mapStats['FTV0']['voxel_count']['value']]
+        FTVthresh_stats = [mapStats['FTVthresh']['volume_cm3']['value'], mapStats['FTVthresh']['voxel_count']['value']]
         ETVstats = [mapStats['ETV']['volume_cm3']['value'], mapStats['ETV']['voxel_count']['value']]
 
         if useSERmap: # SER ranges
@@ -1973,7 +1977,7 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
                 segmentPos = MapDictionary['legend'].index(segmentName)# SERauxList.index(segmentName)
                 segmentStats = self.getStatsFromMask(maskVolumeSegmentationNode, segment_iID)
                 vol_cm3 = np.round(segmentStats['volume_cm3']['value'],3)
-                vol_rel = np.round(100 * segmentStats['voxel_count']['value'] / ETVstats[1], 2)
+                vol_rel = np.round(100 * segmentStats['voxel_count']['value'] / FTVstats[1], 2)
                 nameColumn.InsertNextValue(segmentName)
                 volumeColumn.InsertNextValue(vol_cm3)
                 distColumn.InsertNextValue(vol_rel)
@@ -1989,9 +1993,13 @@ class quantificationLogic(ScriptedLoadableModuleLogic):
             
         
         # Append the FTV and ETV stats at the end of list
-        nameColumn.InsertNextValue('FTV (Functional Tumour Volume)')
+        nameColumn.InsertNextValue('FTVth (SER>SER_th)')
+        volumeColumn.InsertNextValue(np.round(FTVthresh_stats[0],3))
+        distColumn.InsertNextValue(np.round(100 * FTVthresh_stats[1]/FTVstats[1], 2))
+
+        nameColumn.InsertNextValue('FTV (SER>0)')
         volumeColumn.InsertNextValue(np.round(FTVstats[0],3))
-        distColumn.InsertNextValue(np.round(100 * FTVstats[1]/ETVstats[1], 2))
+        distColumn.InsertNextValue(np.round(100 * FTVstats[1]/FTVstats[1], 2))
 
         nameColumn.InsertNextValue('ETV (Enhanced Tumour Volume)')
         volumeColumn.InsertNextValue(np.round(ETVstats[0],3))
